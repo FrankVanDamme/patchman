@@ -69,8 +69,7 @@ jobs:
             auto-commit to update debian changelog
             skip-checks: true
         run: |
-          gbp dch --new-version=$(cat VERSION.txt)-1 -commit-msg="${COMMIT_MSG}"
-          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
+          gbp dch --new-version=$(cat VERSION.txt)-1 --commit --commit-msg="${COMMIT_MSG}"
           git push origin master
   build-and-upload-deb-assets:
     needs: update-version-and-changelog
@@ -109,7 +108,18 @@ jobs:
           rm upload_url.txt
           echo "::set-env name=upload_url::${upload_url}"
       - name: Build deb packages
+        env:
+          COMMIT_MSG: |
+            auto-commit
+            skip-checks: true
         run: |
+          export version=$(echo "${{ github.ref }}" | cut -dv -f2)
+          echo "${version}" > VERSION.txt
+          git add VERSION.txt
+          git diff --quiet && git diff --staged --quiet || git commit -m "${COMMIT_MSG}"
+          gbp dch --new-version=${version}-1 --commit --commit-msg="${COMMIT_MSG}"
+          git tag --delete v${version}
+          git tag v${version}
           gbp buildpackage --git-upstream-tree=${{ github.ref }} -uc -us
       - name: Upload python-patchman deb
         uses: actions/upload-release-asset@v1.0.1
@@ -138,7 +148,7 @@ jobs:
       - name: Install build dependencies
         run: |
           yum -y install epel-release
-          rpm -U https://centos7.iuscommunity.org/ius-release.rpm
+          yum -y install https://repo.ius.io/ius-release-el7.rpm
           yum makecache
           yum -y install rpm-build python-setuptools git222
       - uses: actions/checkout@v2
@@ -193,6 +203,9 @@ jobs:
       uses: actions/setup-python@v1
       with:
         python-version: '3.x'
+    - name: Set version
+      run: |
+        echo "${{ github.ref }}" | cut -dv -f2 > VERSION.txt
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
